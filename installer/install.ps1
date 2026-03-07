@@ -1,22 +1,22 @@
-# theSpaceDB Installer — Cool Edition
-# Run via install.bat (do not run directly)
+# theSpaceDB Installer - Cool Edition
+# Run via install.bat only
 
 param(
-    [string]$SourceDir   = (Split-Path $PSScriptRoot -Parent),
-    [string]$InstallDir  = "$env:LOCALAPPDATA\theSpaceDB",
+    [string]$SourceDir  = (Split-Path $PSScriptRoot -Parent),
+    [string]$InstallDir = "$env:LOCALAPPDATA\theSpaceDB",
     [switch]$Unattended
 )
 
 $ErrorActionPreference = "Stop"
 
-# Top-level crash guard — window never silently closes
+# Top-level crash guard - window never silently closes
 trap {
     Write-Host ""
-    Write-Host "  ╔══════════════════════════════════════════╗" -ForegroundColor Red
-    Write-Host "  ║  INSTALLER CRASHED — Details below:      ║" -ForegroundColor Red
-    Write-Host "  ╚══════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host "  +------------------------------------------+" -ForegroundColor Red
+    Write-Host "  |  INSTALLER CRASHED - Details below:      |" -ForegroundColor Red
+    Write-Host "  +------------------------------------------+" -ForegroundColor Red
     Write-Host ""
-    Write-Host "  $_" -ForegroundColor Red
+    Write-Host "  ERROR: $_" -ForegroundColor Red
     Write-Host ""
     Write-Host "  SourceDir : $SourceDir"  -ForegroundColor DarkGray
     Write-Host "  InstallDir: $InstallDir" -ForegroundColor DarkGray
@@ -24,49 +24,26 @@ trap {
     Read-Host "  Press ENTER to close"
     exit 1
 }
+
 $Host.UI.RawUI.WindowTitle = "theSpaceDB Installer"
 
 # ── helpers ──────────────────────────────────────────────────────────
+
+function Ln  { Write-Host "" }
 
 function C($color, $text) {
     Write-Host $text -ForegroundColor $color -NoNewline
 }
 
-function Ln { Write-Host "" }
-
-function Banner {
-    Clear-Host
-    Ln
-    C Cyan    "  ╔══════════════════════════════════════════════════════════╗"; Ln
-    C Cyan    "  ║                                                          ║"; Ln
-    C Cyan    "  ║  "; C Yellow "∞"; C White "  theSpaceDB  v0.1.0  Installer"; C Cyan "                        ║"; Ln
-    C Cyan    "  ║  "; C DarkGray "   Blocks in free space. We chase infinity."; C Cyan "          ║"; Ln
-    C Cyan    "  ║                                                          ║"; Ln
-    C Cyan    "  ╚══════════════════════════════════════════════════════════╝"; Ln
-    Ln
-}
-
-function ProgressBar($percent, $width = 40) {
+function ProgressBar($percent, $width = 44) {
     $filled = [int]($percent / 100 * $width)
     $empty  = $width - $filled
-    $bar    = ("█" * $filled) + ("░" * $empty)
-    Write-Host "`r  [" -NoNewline
-    Write-Host $bar -ForegroundColor Cyan -NoNewline
-    Write-Host "]  $percent%" -NoNewline
+    $bar    = ("=" * $filled) + ("-" * $empty)
+    Write-Host "`r  [$bar] $percent%" -NoNewline
 }
-
-function Step($icon, $msg) {
-    Ln
-    C Yellow "  $icon "; C White $msg; Ln
-}
-
-function OK($msg)   { C Green  "    ✔  $msg"; Ln }
-function WARN($msg) { C Yellow "    ⚠  $msg"; Ln }
-function ERR($msg)  { C Red    "    ✘  $msg"; Ln }
-function INFO($msg) { C DarkGray "       $msg"; Ln }
 
 function FakeProgress($from, $to, $ms = 600) {
-    $steps = $to - $from
+    $steps = [Math]::Max(1, $to - $from)
     $delay = [int]($ms / $steps)
     for ($i = $from; $i -le $to; $i++) {
         ProgressBar $i
@@ -74,75 +51,104 @@ function FakeProgress($from, $to, $ms = 600) {
     }
 }
 
+function Step($n, $msg) {
+    Ln
+    C Yellow "  >> Step $n "; C White $msg
+    Ln
+}
+
+function OK($msg)   { C Green  "  [DONE] $msg";  Ln }
+function WARN($msg) { C Yellow "  [WARN] $msg";  Ln }
+function ERR($msg)  { C Red    "  [FAIL] $msg";  Ln }
+function INFO($msg) { C DarkGray "         $msg"; Ln }
+
 function RunCmd($cmd, $argList, $desc) {
-    Write-Host ""
+    Ln
     $result = & $cmd @argList 2>&1
     $code   = $LASTEXITCODE
     if ($code -ne 0) {
-        Write-Host ""
-        Write-Host "  ✘  $desc failed (exit code $code)" -ForegroundColor Red
-        Write-Host ""
+        Ln
+        ERR "$desc failed (exit code: $code)"
+        Ln
         $result | Select-Object -Last 10 | ForEach-Object {
             Write-Host "     $_" -ForegroundColor DarkGray
         }
-        Write-Host ""
+        Ln
         Read-Host "  Press ENTER to close"
         exit 1
     }
 }
 
-# ── funny loading lines ───────────────────────────────────────────────
-$loadingLines = @(
+$jokes = @(
     "Convincing electrons to behave...",
     "Downloading more RAM... just kidding.",
     "Teaching blocks to float in space...",
-    "Negotiating with numpy. It's complicated.",
-    "Installing the soul of the database (W matrix)...",
-    "Spinning up cognitive drift engines...",
-    "Asking Python to not break things...",
-    "Manifesting intelligence from chaos...",
-    "Making sure the installer doesn't judge you...",
-    "Almost there. Or are we? Infinity is relative."
+    "Negotiating with numpy. It is complicated.",
+    "Installing the soul of the DB (W matrix)...",
+    "Asking Python to not break things for once...",
+    "Manifesting intelligence from pure chaos...",
+    "Making sure the installer does not judge you...",
+    "Almost there. Or are we? Infinity is relative.",
+    "Your RAM signed a waiver. We are good."
 )
 
-function FunnyLine {
-    $line = $loadingLines[(Get-Random -Maximum $loadingLines.Count)]
-    C DarkGray "       $line"; Ln
+function Joke {
+    $j = $jokes[(Get-Random -Maximum $jokes.Count)]
+    INFO $j
 }
 
 # ═════════════════════════════════════════════════════════════════════
-Banner
-
-# ── welcome ───────────────────────────────────────────────────────────
-C White "  Welcome, human."; Ln
-C DarkGray "  You are about to install a database that thinks."; Ln
-C DarkGray "  Blocks drift. Clusters emerge. Personalities form."; Ln
-C DarkGray "  Your RAM may never be the same again."; Ln
+# BANNER
+# ═════════════════════════════════════════════════════════════════════
+Clear-Host
+Ln
+C Cyan "  +============================================================+"; Ln
+C Cyan "  |                                                            |"; Ln
+C Cyan "  |    [inf]  theSpaceDB  v0.1.0  Installer                   |"; Ln
+C Cyan "  |           Blocks in free space. We chase infinity.        |"; Ln
+C Cyan "  |                                                            |"; Ln
+C Cyan "  +============================================================+"; Ln
+Ln
+C White  "  Welcome, human."; Ln
+INFO "You are about to install a database that thinks."
+INFO "Blocks drift. Clusters emerge. Personalities form."
+INFO "Your RAM may never be the same again."
 Ln
 
 if (-not $Unattended) {
-    C DarkGray "  Install location: "; C Cyan $InstallDir; Ln
-    C DarkGray "  Source:           "; C Cyan $SourceDir;  Ln
+    C DarkGray "  Install to : "; C Cyan $InstallDir; Ln
+    C DarkGray "  Source     : "; C Cyan $SourceDir;  Ln
     Ln
     C White "  Press ENTER to begin (or Ctrl+C to escape reality)  "
     Read-Host | Out-Null
 }
 
 Ln
-C Cyan "  ──────────────────────────────────────────────────────────"; Ln
-Ln
+C Cyan "  ------------------------------------------------------------"; Ln
 
-# ── STEP 1: Python check ─────────────────────────────────────────────
-Step "🐍" "Step 1/5 — Checking Python 3.11+"
-FunnyLine
+# ═════════════════════════════════════════════════════════════════════
+# STEP 1 - Python
+# ═════════════════════════════════════════════════════════════════════
+Step "1/5" "Checking Python 3.11+"
+Joke
 
 $python = $null
-foreach ($cmd in @("python", "python3", "py -3.11", "py")) {
+foreach ($cmd in @("python", "python3")) {
     try {
-        $v = & $cmd.Split()[0] ($cmd.Split() | Select-Object -Skip 1) --version 2>&1
-        if ($v -match "Python 3\.(\d+)" -and [int]$Matches[1] -ge 11) {
-            $python = $cmd.Split()[0]
+        $v = & $cmd --version 2>&1
+        if ("$v" -match "Python 3\.(\d+)" -and [int]$Matches[1] -ge 11) {
+            $python = $cmd
             break
+        }
+    } catch {}
+}
+
+# Also try py launcher
+if (-not $python) {
+    try {
+        $v = & py -3 --version 2>&1
+        if ("$v" -match "Python 3\.(\d+)" -and [int]$Matches[1] -ge 11) {
+            $python = "py"
         }
     } catch {}
 }
@@ -152,17 +158,16 @@ if ($python) {
     OK "$ver found. Python is cooperating today."
     FakeProgress 0 20 400
 } else {
-    WARN "Python 3.11+ not found. Attempting winget install..."
-    FunnyLine
+    WARN "Python 3.11+ not found. Trying winget install..."
     try {
         winget install -e --id Python.Python.3.11 --silent `
             --accept-package-agreements --accept-source-agreements | Out-Null
         $python = "python"
-        OK "Python installed via winget. We believe in second chances."
+        OK "Python installed via winget."
     } catch {
         ERR "Could not auto-install Python."
         INFO "Please install Python 3.11+ from https://python.org"
-        INFO "Make sure to check 'Add Python to PATH' during install."
+        INFO "Check 'Add Python to PATH' during install, then re-run."
         Read-Host "`n  Press ENTER to exit"
         exit 1
     }
@@ -170,125 +175,136 @@ if ($python) {
 
 Ln
 
-# ── STEP 2: Create directory ─────────────────────────────────────────
-Step "📁" "Step 2/5 — Preparing the space"
+# ═════════════════════════════════════════════════════════════════════
+# STEP 2 - Directory
+# ═════════════════════════════════════════════════════════════════════
+Step "2/5" "Preparing the space"
 FakeProgress 20 35 300
 Ln
 
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-OK "Directory created: $InstallDir"
+OK "Directory ready: $InstallDir"
 INFO "This is where your blocks will live. Treat it well."
-
 Ln
 
-# ── STEP 3: Virtual environment ──────────────────────────────────────
-Step "🔮" "Step 3/5 — Creating virtual environment"
-FunnyLine
+# ═════════════════════════════════════════════════════════════════════
+# STEP 3 - Virtual environment
+# ═════════════════════════════════════════════════════════════════════
+Step "3/5" "Creating virtual environment"
+Joke
 FakeProgress 35 50 400
 Ln
 
-$venv   = Join-Path $InstallDir ".venv"
-$pip    = Join-Path $venv "Scripts\pip.exe"
-$pyexe  = Join-Path $venv "Scripts\python.exe"
+$venv  = Join-Path $InstallDir ".venv"
+$pip   = Join-Path $venv "Scripts\pip.exe"
+$pyexe = Join-Path $venv "Scripts\python.exe"
 
-RunCmd $python @("-m", "venv", $venv) "Virtual environment creation"
+if ($python -eq "py") {
+    RunCmd "py" @("-3", "-m", "venv", $venv) "Virtual environment creation"
+} else {
+    RunCmd $python @("-m", "venv", $venv) "Virtual environment creation"
+}
+
 OK "Virtual environment ready. A clean mind deserves a clean env."
-
 Ln
 
-# ── STEP 4: Install dependencies ────────────────────────────────────
-Step "📦" "Step 4/5 — Installing dependencies"
-INFO "This might take 2-3 minutes. Go drink some water. Seriously."
+# ═════════════════════════════════════════════════════════════════════
+# STEP 4 - Dependencies
+# ═════════════════════════════════════════════════════════════════════
+Step "4/5" "Installing dependencies"
+INFO "This may take 2-3 minutes. Go drink some water. Seriously."
 Ln
 
-FakeProgress 50 55 200
+FakeProgress 50 55 300
 Ln
 INFO "Upgrading pip (it has trust issues with old versions)..."
-& $pip install --quiet --upgrade pip setuptools wheel 2>&1 | Out-Null
+RunCmd $pip @("install", "--quiet", "--upgrade", "pip", "setuptools", "wheel") "pip upgrade"
 OK "pip upgraded."
 
-FakeProgress 55 62 300
+FakeProgress 55 63 300
 Ln
 INFO "Installing numpy (the math guy)..."
-& $pip install --quiet "numpy>=1.26" 2>&1 | Out-Null
+RunCmd $pip @("install", "--quiet", "numpy>=1.26") "numpy install"
 OK "numpy installed."
 
-FakeProgress 62 68 300
+FakeProgress 63 70 300
 Ln
 INFO "Installing scikit-learn (the clustering wizard)..."
-& $pip install --quiet "scikit-learn>=1.4" 2>&1 | Out-Null
+RunCmd $pip @("install", "--quiet", "scikit-learn>=1.4") "scikit-learn install"
 OK "scikit-learn installed."
 
-FakeProgress 68 80 400
+FakeProgress 70 83 500
 Ln
 INFO "Installing sentence-transformers (the brain that reads text)..."
-INFO "This one is chunky. 400MB of pure language understanding."
-& $pip install --quiet "sentence-transformers>=2.7" 2>&1 | Out-Null
-OK "sentence-transformers installed. Your DB now speaks human."
+INFO "This one is chunky. Be patient."
+RunCmd $pip @("install", "--quiet", "sentence-transformers>=2.7") "sentence-transformers install"
+OK "sentence-transformers installed. Your DB now understands human."
 
-FakeProgress 80 90 400
+FakeProgress 83 93 400
 Ln
 INFO "Installing theSpaceDB from: $SourceDir"
-RunCmd $pip @("install", "--quiet", $SourceDir) "theSpaceDB installation"
+RunCmd $pip @("install", "--quiet", $SourceDir) "theSpaceDB install"
 OK "theSpaceDB installed. The space is ready."
-
 Ln
 
-# ── STEP 5: Launcher + PATH ──────────────────────────────────────────
-Step "🚀" "Step 5/5 — Creating spacesh launcher"
-FakeProgress 90 98 300
+# ═════════════════════════════════════════════════════════════════════
+# STEP 5 - Launcher + PATH
+# ═════════════════════════════════════════════════════════════════════
+Step "5/5" "Creating spacesh launcher"
+FakeProgress 93 99 300
 Ln
 
 # spacesh.bat launcher
 $launcherPath = Join-Path $InstallDir "spacesh.bat"
-Set-Content -Path $launcherPath -Encoding ASCII -Value "@echo off`r`n`"$pyexe`" -m spacedb.shell %*"
-OK "Launcher created: spacesh.bat"
+$launcherContent = "@echo off`r`n`"$pyexe`" -m spacedb.shell %*"
+[System.IO.File]::WriteAllText($launcherPath, $launcherContent, [System.Text.Encoding]::ASCII)
+OK "Launcher: $launcherPath"
 
 # Add to user PATH
 $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 if ($userPath -notlike "*$InstallDir*") {
-    [Environment]::SetEnvironmentVariable("PATH", "$userPath;$InstallDir", "User")
-    OK "Added to PATH. You can now type 'spacesh' from anywhere."
+    $newPath = $userPath + ";" + $InstallDir
+    [Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
+    OK "Added spacesh to PATH. Restart your terminal after install."
 } else {
-    OK "Already in PATH. The space remembers you."
+    OK "Already in PATH."
 }
 
 # Desktop shortcut
 try {
-    $desk   = [Environment]::GetFolderPath("Desktop")
-    $lnk    = Join-Path $desk "spacesh.lnk"
-    $wsh    = New-Object -ComObject WScript.Shell
-    $link   = $wsh.CreateShortcut($lnk)
+    $desk = [Environment]::GetFolderPath("Desktop")
+    $lnk  = Join-Path $desk "spacesh.lnk"
+    $wsh  = New-Object -ComObject WScript.Shell
+    $link = $wsh.CreateShortcut($lnk)
     $link.TargetPath       = "cmd.exe"
     $link.Arguments        = "/k spacesh"
     $link.WorkingDirectory = $env:USERPROFILE
     $link.Description      = "theSpaceDB Shell"
     $link.Save()
-    OK "Desktop shortcut created. Double-click to enter the space."
+    OK "Desktop shortcut created."
 } catch {
     WARN "Could not create desktop shortcut (not critical)."
 }
 
-FakeProgress 98 100 200
+FakeProgress 99 100 200
 Ln; Ln
 
-# ── DONE ─────────────────────────────────────────────────────────────
-C Cyan    "  ╔══════════════════════════════════════════════════════════╗"; Ln
-C Cyan    "  ║                                                          ║"; Ln
-C Cyan    "  ║  "; C Green "✔  Installation complete!"; C Cyan "                              ║"; Ln
-C Cyan    "  ║                                                          ║"; Ln
-C Cyan    "  ║  "; C White "  Open a NEW terminal and type:"; C Cyan "                      ║"; Ln
-C Cyan    "  ║                                                          ║"; Ln
-C Cyan    "  ║  "; C Yellow "    spacesh C:\my_mind"; C Cyan "                                    ║"; Ln
-C Cyan    "  ║                                                          ║"; Ln
-C Cyan    "  ║  "; C DarkGray "  Or double-click 'spacesh' on your Desktop."; C Cyan "          ║"; Ln
-C Cyan    "  ║                                                          ║"; Ln
-C Cyan    "  ║  "; C DarkGray "  Nothing fixed. Everything evolving.  "; C Yellow "∞"; C Cyan "              ║"; Ln
-C Cyan    "  ║                                                          ║"; Ln
-C Cyan    "  ╚══════════════════════════════════════════════════════════╝"; Ln
+# ═════════════════════════════════════════════════════════════════════
+# DONE
+# ═════════════════════════════════════════════════════════════════════
+C Green "  +============================================================+"; Ln
+C Green "  |                                                            |"; Ln
+C Green "  |  DONE!  theSpaceDB installed successfully.                |"; Ln
+C Green "  |                                                            |"; Ln
+C Green "  |  1. Open a NEW terminal (important!)                      |"; Ln
+C Green "  |  2. Type:  spacesh C:\my_mind                             |"; Ln
+C Green "  |     Or double-click 'spacesh' on your Desktop.            |"; Ln
+C Green "  |                                                            |"; Ln
+C Green "  |  Nothing fixed. Everything evolving.  [inf]               |"; Ln
+C Green "  |                                                            |"; Ln
+C Green "  +============================================================+"; Ln
 Ln
 
 if (-not $Unattended) {
-    C DarkGray "  Press ENTER to close this window and open your mind.  "
-    Read-Host | Out-Null
+    Read-Host "  Press ENTER to close"
 }
