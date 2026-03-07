@@ -186,7 +186,14 @@ class SpaceEngine:
         }
 
     # expose internals for query builder / drift controller
-    @property def clusters(self): return self._clusters
-    @property def blocks(self):   return self._blocks
-    @property def graph(self):    return self._graph
-    @property def dist(self):     return self._dist
+    @property
+    def clusters(self): return self._clusters
+
+    @property
+    def blocks(self): return self._blocks
+
+    @property
+    def graph(self): return self._graph
+
+    @property
+    def dist(self): return self._dist

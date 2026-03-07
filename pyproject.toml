@@ -1,12 +1,11 @@
 [build-system]
-requires      = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
+requires      = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name        = "theSpaceDB"
 version     = "0.1.0"
 description = "A self-evolving cognitive database. Blocks in free space. We chase infinity."
-readme      = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
@@ -20,3 +19,7 @@ fast = ["hnswlib>=0.8"]
 
 [project.scripts]
 spacesh = "spacedb.shell:main"
+
+[tool.setuptools.packages.find]
+where   = ["."]
+include = ["spacedb*"]
