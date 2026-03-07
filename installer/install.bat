@@ -1,16 +1,18 @@
 @echo off
-:: ═══════════════════════════════════════════════════════
-::  theSpaceDB Installer
-::  Double-click this file to install.
-:: ═══════════════════════════════════════════════════════
+title theSpaceDB Installer
 
-:: Check for admin rights — elevate if needed
+:: ── elevate to admin if needed ───────────────────────────────────────
 net session >nul 2>&1
 if %errorLevel% neq 0 (
-    echo Requesting administrator privileges...
-    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    echo  Requesting admin rights — click Yes to continue...
+    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
     exit /b
 )
 
-:: Run the PowerShell installer
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1"
+:: ── run the PowerShell installer ────────────────────────────────────
+:: %~dp0     = folder of this .bat  (i.e. installer\)
+:: %~dp0..   = parent folder        (i.e. D:\SpaceDB\)
+powershell.exe -NoProfile -ExecutionPolicy Bypass ^
+    -File "%~dp0install.ps1" ^
+    -SourceDir "%~dp0.." ^
+    -InstallDir "%LOCALAPPDATA%\theSpaceDB"
