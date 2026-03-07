@@ -8,6 +8,22 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Top-level crash guard — window never silently closes
+trap {
+    Write-Host ""
+    Write-Host "  ╔══════════════════════════════════════════╗" -ForegroundColor Red
+    Write-Host "  ║  INSTALLER CRASHED — Details below:      ║" -ForegroundColor Red
+    Write-Host "  ╚══════════════════════════════════════════╝" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  $_" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  SourceDir : $SourceDir"  -ForegroundColor DarkGray
+    Write-Host "  InstallDir: $InstallDir" -ForegroundColor DarkGray
+    Write-Host ""
+    Read-Host "  Press ENTER to close"
+    exit 1
+}
 $Host.UI.RawUI.WindowTitle = "theSpaceDB Installer"
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -58,12 +74,19 @@ function FakeProgress($from, $to, $ms = 600) {
     }
 }
 
-function RunCmd($cmd, $args, $desc) {
-    $result = & $cmd @args 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        ERR "$desc failed."
-        INFO ($result | Select-Object -Last 5 | Out-String)
-        Read-Host "`n  Press ENTER to exit"
+function RunCmd($cmd, $argList, $desc) {
+    Write-Host ""
+    $result = & $cmd @argList 2>&1
+    $code   = $LASTEXITCODE
+    if ($code -ne 0) {
+        Write-Host ""
+        Write-Host "  ✘  $desc failed (exit code $code)" -ForegroundColor Red
+        Write-Host ""
+        $result | Select-Object -Last 10 | ForEach-Object {
+            Write-Host "     $_" -ForegroundColor DarkGray
+        }
+        Write-Host ""
+        Read-Host "  Press ENTER to close"
         exit 1
     }
 }
