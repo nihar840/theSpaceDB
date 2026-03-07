@@ -218,32 +218,32 @@ Ln
 FakeProgress 50 55 300
 Ln
 INFO "Upgrading pip (it has trust issues with old versions)..."
-RunCmd $pip @("install", "--quiet", "--upgrade", "pip", "setuptools", "wheel") "pip upgrade"
+RunCmd $pyexe @("-m", "pip", "install", "--quiet", "--upgrade", "pip", "setuptools", "wheel") "pip upgrade"
 OK "pip upgraded."
 
 FakeProgress 55 63 300
 Ln
 INFO "Installing numpy (the math guy)..."
-RunCmd $pip @("install", "--quiet", "numpy>=1.26") "numpy install"
+RunCmd $pyexe @("-m", "pip", "install", "--quiet", "numpy>=1.26") "numpy install"
 OK "numpy installed."
 
 FakeProgress 63 70 300
 Ln
 INFO "Installing scikit-learn (the clustering wizard)..."
-RunCmd $pip @("install", "--quiet", "scikit-learn>=1.4") "scikit-learn install"
+RunCmd $pyexe @("-m", "pip", "install", "--quiet", "scikit-learn>=1.4") "scikit-learn install"
 OK "scikit-learn installed."
 
 FakeProgress 70 83 500
 Ln
 INFO "Installing sentence-transformers (the brain that reads text)..."
 INFO "This one is chunky. Be patient."
-RunCmd $pip @("install", "--quiet", "sentence-transformers>=2.7") "sentence-transformers install"
+RunCmd $pyexe @("-m", "pip", "install", "--quiet", "sentence-transformers>=2.7") "sentence-transformers install"
 OK "sentence-transformers installed. Your DB now understands human."
 
 FakeProgress 83 93 400
 Ln
 INFO "Installing theSpaceDB from: $SourceDir"
-RunCmd $pip @("install", "--quiet", $SourceDir) "theSpaceDB install"
+RunCmd $pyexe @("-m", "pip", "install", "--quiet", $SourceDir) "theSpaceDB install"
 OK "theSpaceDB installed. The space is ready."
 Ln
 
