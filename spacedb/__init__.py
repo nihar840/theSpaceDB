@@ -15,9 +15,10 @@ from ._core._exceptions import (
     StoreCorruptedError,
     ClusterNotFoundError,
     EmbedderNotAvailableError,
+    StorageQuotaError,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     # Main API
@@ -35,4 +36,5 @@ __all__ = [
     "StoreCorruptedError",
     "ClusterNotFoundError",
     "EmbedderNotAvailableError",
+    "StorageQuotaError",
 ]

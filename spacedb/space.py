@@ -28,7 +28,9 @@ from typing import Optional, Union, TYPE_CHECKING
 import numpy as np
 
 from ._core.engine       import SpaceEngine
-from ._core._exceptions  import EmbedderNotAvailableError, VectorDimensionError
+from ._core._exceptions  import (
+    EmbedderNotAvailableError, VectorDimensionError, StorageQuotaError,
+)
 from .query              import QueryBuilder
 from .drift              import DriftController
 
@@ -73,14 +75,16 @@ class Space:
     Holds all memory blocks, clusters, and personalities for one mind.
     """
 
-    def __init__(self, name: str, base_path: str, dim: int = 384):
+    def __init__(self, name: str, base_path: str, dim: int = 384,
+                 max_size_mb: Optional[float] = None):
         self.name  = name
         self._path = os.path.join(base_path, name)
         os.makedirs(self._path, exist_ok=True)
 
-        self._engine   = SpaceEngine(self._path, dim)
-        self._embedder = None          # lazy-loaded
-        self._dim      = dim
+        self._engine       = SpaceEngine(self._path, dim)
+        self._embedder     = None          # lazy-loaded
+        self._dim          = dim
+        self._max_size_mb  = max_size_mb   # None = unlimited
 
         self.drift    = DriftController(self._engine)
         self.clusters = ClusterView(self._engine)
@@ -109,6 +113,7 @@ class Space:
         MemoryBlock
             The stored block. Keep ``.id`` for later reinforce / decay.
         """
+        self._check_quota()
         if isinstance(content, np.ndarray):
             vec = self._validate_vector(content)
             token = f"<raw:{sensory_type}>"
@@ -174,11 +179,49 @@ class Space:
         ids = [b if isinstance(b, str) else b.id for b in blocks]
         return self._engine.register_cluster(ids, name)
 
+    # ── storage ───────────────────────────────────────────────
+    def storage(self) -> dict:
+        """
+        Current storage usage for this space.
+
+        Returns
+        -------
+        dict
+            ``used_bytes``, ``used_mb``, ``max_mb`` (None if unlimited),
+            ``percent`` (None if unlimited).
+        """
+        used = self._engine.storage_bytes()
+        used_mb = round(used / (1024 * 1024), 2)
+        pct = round(used_mb / self._max_size_mb * 100, 1) if self._max_size_mb else None
+        return {
+            "used_bytes": used,
+            "used_mb":    used_mb,
+            "max_mb":     self._max_size_mb,
+            "percent":    pct,
+        }
+
     # ── status ───────────────────────────────────────────────
     def status(self) -> dict:
-        return {'space': self.name, **self._engine.status()}
+        s = self._engine.status()
+        s["space"]       = self.name
+        s["max_size_mb"] = self._max_size_mb
+        return s
 
     # ── internal ─────────────────────────────────────────────
+    def _check_quota(self):
+        """Raise StorageQuotaError if space has reached its size limit."""
+        if self._max_size_mb is None:
+            return
+        used = self._engine.storage_bytes()
+        limit = self._max_size_mb * 1024 * 1024
+        if used >= limit:
+            used_mb = round(used / (1024 * 1024), 2)
+            raise StorageQuotaError(
+                f"Space '{self.name}' has reached its storage limit "
+                f"({used_mb} MB / {self._max_size_mb} MB). "
+                f"Cannot ingest new blocks. "
+                f"Increase max_size_mb or create a new space."
+            )
     def _validate_vector(self, vec: np.ndarray) -> np.ndarray:
         """Validate shape and values of a raw embedding vector."""
         vec = np.asarray(vec, dtype=np.float32).squeeze()

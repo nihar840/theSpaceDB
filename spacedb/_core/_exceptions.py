@@ -23,3 +23,7 @@ class ClusterNotFoundError(SpaceDBError):
 
 class EmbedderNotAvailableError(SpaceDBError):
     """Raised when sentence-transformers is not installed and text auto-embedding is attempted."""
+
+
+class StorageQuotaError(SpaceDBError):
+    """Raised when a Space has reached its max_size_mb limit and cannot ingest new blocks."""

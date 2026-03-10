@@ -213,8 +213,21 @@ class SpaceEngine:
         except Exception as e:
             logger.warning("Drift step failed: %s", e)
 
+    # ── storage ───────────────────────────────────────────────
+    def storage_bytes(self) -> int:
+        """Total bytes used by all data files in this space."""
+        total = 0
+        for dirpath, _dirnames, filenames in os.walk(self.path):
+            for f in filenames:
+                try:
+                    total += os.path.getsize(os.path.join(dirpath, f))
+                except OSError:
+                    pass
+        return total
+
     # ── status ───────────────────────────────────────────────
     def status(self) -> dict:
+        size_bytes = self.storage_bytes()
         return {
             'blocks':        self._blocks.count(),
             'graph_nodes':   self._graph.node_count(),
@@ -226,6 +239,8 @@ class SpaceEngine:
             'w_updates':     self._dist.update_count,
             'drift':         self._drift_running,
             'idle_s':        round(time.time() - self._last_input, 1),
+            'storage_bytes': size_bytes,
+            'storage_mb':    round(size_bytes / (1024 * 1024), 2),
         }
 
     # expose internals for query builder / drift controller
