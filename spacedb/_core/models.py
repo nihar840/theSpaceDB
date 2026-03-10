@@ -1,6 +1,15 @@
-import uuid, time
+import logging
+import uuid
+import time
 from dataclasses import dataclass, field
 from typing import Optional
+
+__all__ = ["MemoryBlock", "ClusterData"]
+
+log = logging.getLogger("spacedb.models")
+
+# Well-known sensory types; custom strings are allowed.
+KNOWN_SENSORY_TYPES = frozenset({"text", "audio", "vision", "internal"})
 
 
 @dataclass
@@ -13,7 +22,14 @@ class MemoryBlock:
     cluster_id: Optional[str] = None
 
     @classmethod
-    def create(cls, token: str, sensory_type: str = 'text') -> 'MemoryBlock':
+    def create(cls, token: str, sensory_type: str = "text") -> "MemoryBlock":
+        if not token or not isinstance(token, str):
+            raise ValueError("token must be a non-empty string")
+        if not sensory_type or not isinstance(sensory_type, str):
+            raise ValueError("sensory_type must be a non-empty string")
+        if sensory_type not in KNOWN_SENSORY_TYPES:
+            log.debug("Custom sensory_type %r (known: %s)", sensory_type,
+                       ", ".join(sorted(KNOWN_SENSORY_TYPES)))
         return cls(id=str(uuid.uuid4()), token=token,
                    timestamp=time.time(), sensory_type=sensory_type)
 

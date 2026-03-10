@@ -3,19 +3,47 @@ requires      = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name        = "theSpaceDB"
-version     = "0.1.0"
-description = "A self-evolving cognitive database. Blocks in free space. We chase infinity."
-requires-python = ">=3.11"
+name            = "thespacedb"
+version         = "0.2.0"
+description     = "A self-evolving cognitive database. Blocks in free space. Distance evolves. Clusters emerge."
+readme          = "README.md"
+license         = {text = "MIT"}
+requires-python = ">=3.10"
+authors         = [{name = "Nihar Mahajan"}]
+keywords        = ["database", "cognitive", "embeddings", "vector-store", "machine-learning", "mahalanobis"]
+classifiers     = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 
 dependencies = [
-    "numpy>=1.26",
-    "sentence-transformers>=2.7",
-    "scikit-learn>=1.4",
+    "numpy>=1.24",
 ]
 
 [project.optional-dependencies]
-fast = ["hnswlib>=0.8"]
+embeddings = ["sentence-transformers>=2.7"]
+fast       = ["hnswlib>=0.8"]
+dev        = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+]
+all        = ["thespacedb[embeddings,fast]"]
+
+[project.urls]
+Homepage   = "https://github.com/nihar840/theSpaceDB"
+Repository = "https://github.com/nihar840/theSpaceDB"
+Issues     = "https://github.com/nihar840/theSpaceDB/issues"
 
 [project.scripts]
 spacesh = "spacedb.shell:main"
@@ -23,3 +51,11 @@ spacesh = "spacedb.shell:main"
 [tool.setuptools.packages.find]
 where   = ["."]
 include = ["spacedb*"]
+
+[tool.setuptools.package-data]
+spacedb = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths    = ["tests"]
+addopts      = "-v --tb=short"
+asyncio_mode = "auto"

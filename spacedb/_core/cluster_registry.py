@@ -1,6 +1,9 @@
-import os, json, math, time, uuid
+import os, json, math, time, uuid, threading, logging
 from typing import Optional
 from .models import ClusterData
+from ._exceptions import StoreCorruptedError, ClusterNotFoundError
+
+logger = logging.getLogger("spacedb.cluster")
 
 
 class ClusterRegistry:
@@ -9,6 +12,7 @@ class ClusterRegistry:
     _DECAY       = 0.001
 
     def __init__(self, path: str):
+        self._lock  = threading.Lock()
         self._path  = os.path.join(path, 'clusters.json')
         self._data: dict[str, ClusterData] = {}
         self._exp   = 0
@@ -20,38 +24,42 @@ class ClusterRegistry:
                    self._MIN_THRESH)
 
     def register(self, block_ids: list[str], name: Optional[str] = None) -> str:
-        cid = str(uuid.uuid4())[:8]
-        self._data[cid] = ClusterData(id=cid, block_ids=list(block_ids), name=name)
-        self._save()
-        return cid
+        with self._lock:
+            cid = str(uuid.uuid4())[:8]
+            self._data[cid] = ClusterData(id=cid, block_ids=list(block_ids), name=name)
+            self._save()
+            return cid
 
     def add_block(self, cid: str, bid: str):
-        c = self._data.get(cid)
-        if c and bid not in c.block_ids:
-            c.block_ids.append(bid); c.updated_at = time.time(); self._save()
+        with self._lock:
+            c = self._data.get(cid)
+            if c and bid not in c.block_ids:
+                c.block_ids.append(bid); c.updated_at = time.time(); self._save()
 
     def remove_block(self, cid: str, bid: str):
-        c = self._data.get(cid)
-        if c and bid in c.block_ids:
-            c.block_ids.remove(bid); c.updated_at = time.time(); self._save()
+        with self._lock:
+            c = self._data.get(cid)
+            if c and bid in c.block_ids:
+                c.block_ids.remove(bid); c.updated_at = time.time(); self._save()
 
     def dissolve(self, cid: str) -> list[str]:
-        c = self._data.pop(cid, None); self._save()
-        return c.block_ids if c else []
+        with self._lock:
+            c = self._data.pop(cid, None); self._save()
+            return c.block_ids if c else []
 
     def update_spirit(self, cid: str, spirit: float):
-        c = self._data.get(cid)
-        if not c: return
-        c.spirit_size = spirit; c.updated_at = time.time()
-        t = self.threshold
-        if not c.is_personality and spirit > t:
-            c.is_personality = True
-            print(f"\033[93m  ✦ Personality emerged: '{c.name or cid}'  "
-                  f"spirit={spirit:.3f}\033[0m")
-        elif c.is_personality and spirit < t * 0.5:
-            c.is_personality = False
-            print(f"\033[90m  ◌ Personality dissolved: '{c.name or cid}'\033[0m")
-        self._save()
+        with self._lock:
+            c = self._data.get(cid)
+            if not c: return
+            c.spirit_size = spirit; c.updated_at = time.time()
+            t = self.threshold
+            if not c.is_personality and spirit > t:
+                c.is_personality = True
+                logger.info("Personality emerged: '%s'  spirit=%.3f", c.name or cid, spirit)
+            elif c.is_personality and spirit < t * 0.5:
+                c.is_personality = False
+                logger.info("Personality dissolved: '%s'", c.name or cid)
+            self._save()
 
     def record_experience(self):
         self._exp += 1
@@ -80,7 +88,10 @@ class ClusterRegistry:
 
     def _load(self):
         if not os.path.exists(self._path): return
-        with open(self._path) as f: d = json.load(f)
-        self._exp = d.get('exp', 0)
-        for cid, cd in d.get('clusters', {}).items():
-            self._data[cid] = ClusterData(**cd)
+        try:
+            with open(self._path) as f: d = json.load(f)
+            self._exp = d.get('exp', 0)
+            for cid, cd in d.get('clusters', {}).items():
+                self._data[cid] = ClusterData(**cd)
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            raise StoreCorruptedError(f"Failed to load cluster registry: {e}") from e

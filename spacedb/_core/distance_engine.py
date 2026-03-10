@@ -1,8 +1,13 @@
-import os, time
+import os, time, threading, logging
 import numpy as np
+
+from ._exceptions import VectorDimensionError, StoreCorruptedError
+
+logger = logging.getLogger("spacedb.distance")
 
 _CHECKPOINT_EVERY = 50
 _EIGVAL_FLOOR     = 1e-8
+_EIGVAL_CEILING   = 1e6
 
 
 class DistanceEngine:
@@ -13,6 +18,7 @@ class DistanceEngine:
     """
 
     def __init__(self, path: str, dim: int):
+        self._lock   = threading.RLock()
         self._wpath  = os.path.join(path, 'w_matrix.npy')
         self._mpath  = os.path.join(path, 'w_meta.npy')
         self.dim     = dim
@@ -25,27 +31,42 @@ class DistanceEngine:
 
     # ── distance ─────────────────────────────────────────────
     def distance(self, v1: np.ndarray, v2: np.ndarray) -> float:
-        d = v1.astype(np.float64) - v2.astype(np.float64)
-        return float(np.sqrt(max(d @ self.W @ d, 0.0)))
+        with self._lock:
+            d = v1.astype(np.float64) - v2.astype(np.float64)
+            val = float(np.sqrt(max(d @ self.W @ d, 0.0)))
+            if not np.isfinite(val):
+                return float('inf')
+            return val
 
     def distance_batch(self, query: np.ndarray, matrix: np.ndarray) -> np.ndarray:
-        diff  = matrix.astype(np.float64) - query.astype(np.float64)
-        Wd    = diff @ self.W
-        return np.sqrt(np.maximum(np.einsum('ij,ij->i', diff, Wd), 0.0))
+        with self._lock:
+            diff  = matrix.astype(np.float64) - query.astype(np.float64)
+            Wd    = diff @ self.W
+            return np.sqrt(np.maximum(np.einsum('ij,ij->i', diff, Wd), 0.0))
 
     def transform(self, v: np.ndarray) -> np.ndarray:
         return (self.W @ v.astype(np.float64)).astype(np.float32)
 
     # ── learning ─────────────────────────────────────────────
     def reinforce(self, v1: np.ndarray, v2: np.ndarray, strength: float = 0.01):
-        d = v1.astype(np.float64) - v2.astype(np.float64)
-        self.W -= strength * (1.0 + 0.1 * self._rate) * np.outer(d, d)
-        self._after_update()
+        if v1.shape != (self.dim,) or v2.shape != (self.dim,):
+            raise VectorDimensionError(f"Expected shape ({self.dim},), got v1={v1.shape}, v2={v2.shape}")
+        if strength < 0:
+            raise ValueError("strength must be non-negative")
+        with self._lock:
+            d = v1.astype(np.float64) - v2.astype(np.float64)
+            self.W -= strength * (1.0 + 0.1 * self._rate) * np.outer(d, d)
+            self._after_update()
 
     def decay(self, v1: np.ndarray, v2: np.ndarray, strength: float = 0.001):
-        d = v1.astype(np.float64) - v2.astype(np.float64)
-        self.W += strength * (1.0 + self._rate) * np.outer(d, d)
-        self._after_update()
+        if v1.shape != (self.dim,) or v2.shape != (self.dim,):
+            raise VectorDimensionError(f"Expected shape ({self.dim},), got v1={v1.shape}, v2={v2.shape}")
+        if strength < 0:
+            raise ValueError("strength must be non-negative")
+        with self._lock:
+            d = v1.astype(np.float64) - v2.astype(np.float64)
+            self.W += strength * (1.0 + self._rate) * np.outer(d, d)
+            self._after_update()
 
     def record_input(self):
         now = time.time()
@@ -73,7 +94,8 @@ class DistanceEngine:
     def _project_psd(self):
         self.W = (self.W + self.W.T) / 2.0
         ev, ec = np.linalg.eigh(self.W)
-        self.W = ec @ np.diag(np.maximum(ev, _EIGVAL_FLOOR)) @ ec.T
+        ev = np.clip(ev, _EIGVAL_FLOOR, _EIGVAL_CEILING)
+        self.W = ec @ np.diag(ev) @ ec.T
 
     def _save(self):
         np.save(self._wpath, self.W)
@@ -81,8 +103,15 @@ class DistanceEngine:
 
     def _load(self):
         if os.path.exists(self._wpath):
-            self.W = np.load(self._wpath)
+            try:
+                self.W = np.load(self._wpath)
+            except Exception as e:
+                logger.warning("Failed to load W matrix, keeping identity: %s", e)
+                self.W = np.eye(self.dim, dtype=np.float64)
         if os.path.exists(self._mpath):
-            m = np.load(self._mpath)
-            self._rate, self._n_inp, self._n_upd, self._last_t = (
-                float(m[0]), int(m[1]), int(m[2]), float(m[3]))
+            try:
+                m = np.load(self._mpath)
+                self._rate, self._n_inp, self._n_upd, self._last_t = (
+                    float(m[0]), int(m[1]), int(m[2]), float(m[3]))
+            except Exception as e:
+                logger.warning("Failed to load W metadata, keeping defaults: %s", e)

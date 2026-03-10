@@ -3,7 +3,7 @@ engine.py — SpaceEngine: raw internal engine (takes embeddings directly)
 The public Space class wraps this with auto-embedding + clean API.
 """
 
-import os, math, time, random, asyncio
+import os, math, time, random, asyncio, logging
 from typing import Optional
 import numpy as np
 
@@ -13,6 +13,10 @@ from .vector_store     import VectorStore
 from .distance_engine  import DistanceEngine
 from .graph_store      import GraphStore
 from .cluster_registry import ClusterRegistry
+from ._exceptions      import BlockNotFoundError, VectorDimensionError, StoreCorruptedError
+from ._version         import DATA_FORMAT_VERSION, VERSION_FILE
+
+logger = logging.getLogger("spacedb.engine")
 
 
 class SpaceEngine:
@@ -25,6 +29,18 @@ class SpaceEngine:
         os.makedirs(path, exist_ok=True)
         self.path = path
         self.dim  = dim
+
+        vpath = os.path.join(path, VERSION_FILE)
+        if os.path.exists(vpath):
+            with open(vpath) as f:
+                stored = int(f.read().strip())
+            if stored != DATA_FORMAT_VERSION:
+                raise StoreCorruptedError(
+                    f"Data format v{stored} is incompatible with "
+                    f"current v{DATA_FORMAT_VERSION}. Migration required.")
+        else:
+            with open(vpath, 'w') as f:
+                f.write(str(DATA_FORMAT_VERSION))
 
         self._blocks   = BlockStore(path)
         self._vectors  = VectorStore(path, dim)
@@ -39,10 +55,17 @@ class SpaceEngine:
     # ── ingest ───────────────────────────────────────────────
     def ingest(self, token: str, vec: np.ndarray,
                sensory_type: str = 'text') -> MemoryBlock:
+        if not token:
+            raise ValueError("token must be non-empty")
+        if not isinstance(vec, np.ndarray) or vec.shape != (self.dim,):
+            raise VectorDimensionError(
+                f"Expected ndarray shape ({self.dim},), got {type(vec).__name__} "
+                f"{getattr(vec, 'shape', '?')}")
         block = MemoryBlock.create(token, sensory_type)
         self._blocks.append(block)
         self._vectors.put(block.id, vec)
         self._connect(block.id, vec)
+        self._graph.flush()
         self._dist.record_input()
         self._clusters.record_experience()
         self._last_input = time.time()
@@ -61,6 +84,10 @@ class SpaceEngine:
     def query(self, vec: np.ndarray, time_budget_ms: int = 100,
               personality_id: Optional[str] = None,
               limit: int = 20) -> list[tuple[MemoryBlock, float]]:
+        if time_budget_ms <= 0:
+            raise ValueError("time_budget_ms must be positive")
+        if limit <= 0:
+            raise ValueError("limit must be positive")
         radius = self._radius(time_budget_ms)
         ids, mat = self._vectors.get_all()
         if not ids: return []
@@ -86,13 +113,21 @@ class SpaceEngine:
 
     # ── reinforcement ────────────────────────────────────────
     def reinforce(self, b1_id: str, b2_id: str, strength: float = 0.01):
-        v1, v2 = self._vectors.get(b1_id), self._vectors.get(b2_id)
+        try:
+            v1 = self._vectors.get(b1_id)
+            v2 = self._vectors.get(b2_id)
+        except (KeyError, BlockNotFoundError) as e:
+            raise BlockNotFoundError(f"Cannot reinforce: {e}") from e
         self._dist.reinforce(v1, v2, strength)
         self._graph.update_weight(b1_id, b2_id, strength * 10)
         self._bump(b1_id, strength); self._bump(b2_id, strength)
 
     def decay(self, b1_id: str, b2_id: str, strength: float = 0.001):
-        v1, v2 = self._vectors.get(b1_id), self._vectors.get(b2_id)
+        try:
+            v1 = self._vectors.get(b1_id)
+            v2 = self._vectors.get(b2_id)
+        except (KeyError, BlockNotFoundError) as e:
+            raise BlockNotFoundError(f"Cannot reinforce: {e}") from e
         self._dist.decay(v1, v2, strength)
         self._graph.update_weight(b1_id, b2_id, -strength * 5)
 
@@ -137,7 +172,11 @@ class SpaceEngine:
                 await asyncio.sleep(interval_s)
                 if time.time() - self._last_input >= idle_s:
                     await self._drift_step()
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         self._drift_task = loop.create_task(_loop())
 
     def stop_drift(self):
@@ -145,30 +184,34 @@ class SpaceEngine:
         if self._drift_task: self._drift_task.cancel(); self._drift_task = None
 
     async def _drift_step(self):
-        clusters = self._clusters.all()
-        if not clusters: return
-        weights = [max(c.spirit_size, 0.01) for c in clusters]
-        seed    = random.choices(clusters, weights=weights)[0]
-        if not seed.block_ids: return
-        path = self._graph.random_walk(random.choice(seed.block_ids),
-                                       random.randint(3, 12))
-        for i in range(len(path) - 1):
-            try:
-                v1 = self._vectors.get(path[i])
-                v2 = self._vectors.get(path[i + 1])
-                self._dist.reinforce(v1, v2, self.DRIFT_NUDGE)
-            except KeyError:
-                continue
-            b2 = self._blocks.read(path[i + 1])
-            if b2 and b2.cluster_id and b2.cluster_id != seed.id:
-                foreign = self._clusters.get(b2.cluster_id)
-                if foreign:
-                    if foreign.spirit_size > seed.spirit_size * 0.3:
-                        self._graph.add_edge(seed.id, foreign.id, 0.3)
-                    else:
-                        self._clusters.remove_block(foreign.id, b2.id)
-                        self._clusters.add_block(seed.id, b2.id)
-                        b2.cluster_id = seed.id; self._blocks.update(b2)
+        try:
+            clusters = self._clusters.all()
+            if not clusters: return
+            weights = [max(c.spirit_size, 0.01) for c in clusters]
+            seed    = random.choices(clusters, weights=weights)[0]
+            if not seed.block_ids: return
+            path = self._graph.random_walk(random.choice(seed.block_ids),
+                                           random.randint(3, 12))
+            for i in range(len(path) - 1):
+                try:
+                    v1 = self._vectors.get(path[i])
+                    v2 = self._vectors.get(path[i + 1])
+                    self._dist.reinforce(v1, v2, self.DRIFT_NUDGE)
+                except KeyError:
+                    continue
+                b2 = self._blocks.read(path[i + 1])
+                if b2 and b2.cluster_id and b2.cluster_id != seed.id:
+                    foreign = self._clusters.get(b2.cluster_id)
+                    if foreign:
+                        if foreign.spirit_size > seed.spirit_size * 0.3:
+                            self._graph.add_edge(seed.id, foreign.id, 0.3)
+                        else:
+                            self._clusters.remove_block(foreign.id, b2.id)
+                            self._clusters.add_block(seed.id, b2.id)
+                            b2.cluster_id = seed.id; self._blocks.update(b2)
+            self._graph.flush()
+        except Exception as e:
+            logger.warning("Drift step failed: %s", e)
 
     # ── status ───────────────────────────────────────────────
     def status(self) -> dict:

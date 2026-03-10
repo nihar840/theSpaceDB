@@ -2,32 +2,40 @@
 space.py — Space: the database-level object
 
 Like a MongoDB database, a Space holds all blocks, clusters and
-personalities for one named mind. Auto-embeds text so callers never
-touch raw vectors.
+personalities for one named mind.
 
-Usage:
+Supports both text auto-embedding (requires ``sentence-transformers``)
+and raw numpy vectors — pick whichever fits your pipeline.
+
+Usage (text — needs ``pip install thespacedb[embeddings]``)::
+
     mind = client["my_mind"]
-
     block  = mind.ingest("apple tastes sweet")
     result = mind.query("fruit").within(ms=200).limit(10).fetch()
 
-    mind.reinforce(block_a, block_b)
-    mind.clusters.all()
-    mind.drift.start()
+Usage (raw vectors — zero extra dependencies)::
+
+    vec = my_encoder.encode("apple tastes sweet")
+    block  = mind.ingest(vec, sensory_type="text")
+    result = mind.query(query_vec).limit(10).fetch()
 """
 
 from __future__ import annotations
+import logging
 import os
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, Union, TYPE_CHECKING
 
 import numpy as np
 
-from ._core.engine import SpaceEngine
-from .query        import QueryBuilder
-from .drift        import DriftController
+from ._core.engine       import SpaceEngine
+from ._core._exceptions  import EmbedderNotAvailableError, VectorDimensionError
+from .query              import QueryBuilder
+from .drift              import DriftController
 
 if TYPE_CHECKING:
     from ._core.models import MemoryBlock, ClusterData
+
+log = logging.getLogger("spacedb.space")
 
 
 class ClusterView:
@@ -78,25 +86,67 @@ class Space:
         self.clusters = ClusterView(self._engine)
 
     # ── ingest ───────────────────────────────────────────────
-    def ingest(self, text: str, sensory_type: str = 'text') -> 'MemoryBlock':
+    def ingest(
+        self,
+        content: Union[str, np.ndarray],
+        sensory_type: str = "text",
+    ) -> "MemoryBlock":
         """
-        Store a piece of experience. Text is auto-embedded.
-        Returns the MemoryBlock — save the .id if you want to reinforce later.
+        Store a piece of experience.
+
+        Parameters
+        ----------
+        content : str or np.ndarray
+            * **str** — auto-embedded via sentence-transformers (must be
+              installed: ``pip install thespacedb[embeddings]``).
+            * **np.ndarray** — pre-computed embedding vector of shape
+              ``(dim,)``. No embedding model required.
+        sensory_type : str
+            Label for the modality (``"text"``, ``"image"``, etc.).
+
+        Returns
+        -------
+        MemoryBlock
+            The stored block. Keep ``.id`` for later reinforce / decay.
         """
-        vec = self._embed(text)
-        return self._engine.ingest(text, vec, sensory_type)
+        if isinstance(content, np.ndarray):
+            vec = self._validate_vector(content)
+            token = f"<raw:{sensory_type}>"
+            return self._engine.ingest(token, vec, sensory_type)
+        elif isinstance(content, str):
+            vec = self._embed(content)
+            return self._engine.ingest(content, vec, sensory_type)
+        else:
+            raise TypeError(
+                f"content must be str or np.ndarray, got {type(content).__name__}"
+            )
 
     # ── query ────────────────────────────────────────────────
-    def query(self, text: str) -> QueryBuilder:
+    def query(self, content: Union[str, np.ndarray]) -> QueryBuilder:
         """
         Start a chainable query.
 
-        Examples:
+        Parameters
+        ----------
+        content : str or np.ndarray
+            * **str** — auto-embedded (requires sentence-transformers).
+            * **np.ndarray** — pre-computed query vector.
+
+        Examples::
+
             space.query("fruit").fetch()
-            space.query("fruit").within(ms=500).limit(5).fetch()
+            space.query(my_vec).within(ms=500).limit(5).fetch()
             space.query("fruit").as_personality("food").within(ms=300).fetch()
         """
-        return QueryBuilder(self, text)
+        if isinstance(content, np.ndarray):
+            vec = self._validate_vector(content)
+            return QueryBuilder(self, _vector=vec)
+        elif isinstance(content, str):
+            return QueryBuilder(self, _text=content)
+        else:
+            raise TypeError(
+                f"content must be str or np.ndarray, got {type(content).__name__}"
+            )
 
     # ── reinforce ────────────────────────────────────────────
     def reinforce(self, block_a, block_b, strength: float = 0.01):
@@ -129,6 +179,21 @@ class Space:
         return {'space': self.name, **self._engine.status()}
 
     # ── internal ─────────────────────────────────────────────
+    def _validate_vector(self, vec: np.ndarray) -> np.ndarray:
+        """Validate shape and values of a raw embedding vector."""
+        vec = np.asarray(vec, dtype=np.float32).squeeze()
+        if vec.ndim != 1:
+            raise VectorDimensionError(
+                f"Expected 1-D vector, got shape {vec.shape}"
+            )
+        if vec.shape[0] != self._dim:
+            raise VectorDimensionError(
+                f"Vector dim {vec.shape[0]} ≠ space dim {self._dim}"
+            )
+        if not np.isfinite(vec).all():
+            raise ValueError("Vector contains NaN or Inf values")
+        return vec
+
     def _embed(self, text: str) -> np.ndarray:
         if self._embedder is None:
             self._load_embedder()
@@ -137,12 +202,14 @@ class Space:
     def _load_embedder(self):
         try:
             from sentence_transformers import SentenceTransformer
-            self._embedder = SentenceTransformer('all-MiniLM-L6-v2')
         except ImportError:
-            raise ImportError(
-                "sentence-transformers is required.\n"
-                "Install: pip install sentence-transformers"
+            raise EmbedderNotAvailableError(
+                "sentence-transformers is not installed.\n"
+                "Install it:  pip install thespacedb[embeddings]\n"
+                "Or pass pre-computed np.ndarray vectors instead of strings."
             )
+        log.info("Loading embedding model (all-MiniLM-L6-v2)…")
+        self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
     def _resolve_personality(self, name_or_id: str) -> Optional[str]:
         """Resolve personality name to cluster_id."""

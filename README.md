@@ -6,6 +6,10 @@
 A self-evolving cognitive database where memory blocks float in space,
 learn from experience, and form personalities over time.
 
+[![Tests](https://github.com/nihar840/theSpaceDB/actions/workflows/ci.yml/badge.svg)](https://github.com/nihar840/theSpaceDB/actions)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 ---
 
 ## What is theSpaceDB?
@@ -23,132 +27,117 @@ Traditional databases store data at fixed addresses.
 
 ## Installation
 
-### Step 1 — Download
-
-Clone or download this repository to your machine:
-
-```
-git clone https://github.com/nihar840/theSpaceDB.git
+```bash
+pip install thespacedb
 ```
 
-Or download the ZIP from GitHub and extract it anywhere (e.g. `D:\SpaceDB`).
-
----
-
-### Step 2 — Run the Installer
-
-Navigate to the `installer` folder and double-click:
-
-```
-installer\install.bat
-```
-
-- Click **Yes** when Windows asks for admin rights
-- The installer will automatically:
-  - Check for Python 3.11+ (installs via winget if missing)
-  - Create a virtual environment
-  - Install all dependencies (numpy, scikit-learn, sentence-transformers)
-  - Install theSpaceDB
-  - Add `spacesh` command to your PATH
-  - Create a desktop shortcut
-
-> The first install takes **3-5 minutes** — sentence-transformers is chunky.
-> Go drink some water. Seriously.
-
----
-
-### Step 3 — Verify Installation
-
-After the installer finishes, double-click:
-
-```
-installer\verify.bat
-```
-
-You should see all **[PASS]** results:
-
-```
-  [PASS] Install directory found
-  [PASS] Virtual environment found
-  [PASS] spacesh launcher found
-  [PASS] spacedb package importable  v0.1.0
-  [PASS] sentence-transformers installed
-  [PASS] spacesh command found in PATH
-  [PASS] Desktop shortcut found
-```
-
-If anything fails, re-run `install.bat` and it will fix it.
-
----
-
-### Step 4 — Launch
-
-Open a **new terminal** and type:
+**Optional extras:**
 
 ```bash
-spacesh C:\my_mind
+# Auto-embed text via sentence-transformers (~1 GB model download)
+pip install thespacedb[embeddings]
+
+# Development / testing
+pip install thespacedb[dev]
 ```
 
-Or double-click the **spacesh** shortcut on your Desktop.
+> **Core package requires only `numpy`.**
+> You can use your own embedding model and pass raw vectors — no heavy downloads needed.
 
 ---
 
-## Usage
+## Quick Start
 
-```
-  +============================================================+
-  |    [inf]  theSpaceDB Shell  v0.1.0                        |
-  |           Blocks in free space. We chase infinity.        |
-  +============================================================+
+### With raw vectors (recommended — zero extra dependencies)
 
-  Type 'help' to see available commands.
-```
+```python
+import numpy as np
+from spacedb import SpaceClient
 
-### Commands
+client = SpaceClient("./my_data", dim=32)
+mind = client["demo"]
 
-| Command | What it does |
-|---|---|
-| `use <name>` | Open or create a space (like a database) |
-| `ingest <text>` | Store a memory block |
-| `query <text>` | Find related memories (default: 100ms budget) |
-| `query <text> --time 500` | Deeper search with 500ms time budget |
-| `reinforce <id1> <id2>` | Pull two blocks closer together |
-| `decay <id1> <id2>` | Push two blocks apart |
-| `clusters` | List all clusters |
-| `personalities` | List personality clusters |
-| `drift on` | Start cognitive drift (the DB starts thinking) |
-| `drift off` | Stop drift |
-| `status` | Show space health |
-| `help` | Show all commands |
-| `exit` | Exit the shell |
+# Ingest raw vectors
+v1 = np.random.randn(32).astype(np.float32)
+v2 = np.random.randn(32).astype(np.float32)
+block_a = mind.ingest(v1, sensory_type="text")
+block_b = mind.ingest(v2, sensory_type="vision")
 
-### Quick Demo
+# Query
+results = mind.query(v1).within(ms=200).limit(5).fetch()
 
-```
-space> use demo
-space[demo]> ingest "apple tastes sweet"
-space[demo]> ingest "kitchen smells like food"
-space[demo]> ingest "mother cooking in the kitchen"
-space[demo]> query "fruit"
-space[demo]> drift on
-space[demo]> status
+# Reinforce connection
+mind.reinforce(block_a, block_b)
+
+# Start cognitive drift
+mind.drift.start()
+print(mind.status())
 ```
 
-### Python API
+### With auto-embedding (requires `thespacedb[embeddings]`)
 
 ```python
 from spacedb import SpaceClient
 
-client = SpaceClient("C:/my_mind")
-mind   = client["demo"]
+client = SpaceClient("./my_data")   # dim=384 by default (MiniLM)
+mind = client["demo"]
 
-block   = mind.ingest("apple tastes sweet")
+block = mind.ingest("apple tastes sweet")
 results = mind.query("fruit").within(ms=300).limit(10).fetch()
+```
 
-mind.reinforce(block_a, block_b)
-mind.drift.start()
+---
 
-print(mind.status())
+## Python API
+
+### SpaceClient
+
+```python
+client = SpaceClient(path, dim=384, silent=False)
+
+client["mind_name"]      # open / create a Space
+client.list_spaces()     # list all spaces
+client.drop_space(name, confirm=True)
+client.status()
+```
+
+### Space
+
+```python
+# Ingest (str auto-embedded, np.ndarray used directly)
+block = space.ingest(content, sensory_type="text")
+
+# Chainable query
+results = space.query(content).within(ms=500).limit(10).fetch()
+
+# Reinforce / decay connections
+space.reinforce(block_a, block_b, strength=0.01)
+space.decay(block_a, block_b, strength=0.001)
+
+# Clusters
+cid = space.create_cluster([b1, b2, b3], name="food")
+space.clusters.all()
+space.clusters.personalities()
+
+# Cognitive drift
+space.drift.start(idle_seconds=10)
+space.drift.stop()
+space.drift.status()
+```
+
+### Query results
+
+Each result dict contains:
+
+```python
+{
+    "id":            "uuid-string",
+    "token":         "original text or <raw:type>",
+    "score":         0.1234,
+    "cluster":       "cluster-id or None",
+    "sensory_type":  "text",
+    "reinforcement": 1.0,
+}
 ```
 
 ---
@@ -156,10 +145,7 @@ print(mind.status())
 ## How it Works
 
 ```
-Input text
-    |
-    v
-Auto-embed (sentence-transformers)
+Input (text or vector)
     |
     v
 MemoryBlock created  →  BlockStore (append-only log)
@@ -176,9 +162,6 @@ W Matrix updated  →  DistanceEngine (learned Mahalanobis distance)
     v
 Clusters recomputed  →  ClusterRegistry (spirit size tracked)
     |
-    v
-Personality check  (spirit_size > threshold → personality emerges)
-    |
     v  (when idle)
 Cognitive Drift  →  random walk → new connections → cross-cluster links
 ```
@@ -191,25 +174,75 @@ Distance between blocks is not fixed — it is **learned**:
 dist(A, B) = sqrt( (A - B)^T  W  (A - B) )
 ```
 
-`W` starts as an identity matrix (pure cosine space).
+`W` starts as an identity matrix (standard Euclidean).
 Every `reinforce()` call trains `W` to pull two blocks closer.
 Every `decay()` call pushes them apart.
-Rate of separation is proportional to input rate — more inputs = faster drift.
 
 ---
 
-## Uninstall
+## Custom Embeddings
 
-Double-click `installer\uninstall.bat` to remove theSpaceDB completely.
+Bring your own encoder — just produce `np.ndarray` vectors:
+
+```python
+# OpenAI
+resp = openai.embeddings.create(input=["hello"], model="text-embedding-3-small")
+vec = np.array(resp.data[0].embedding, dtype=np.float32)
+
+# HuggingFace
+from transformers import AutoModel, AutoTokenizer
+vec = model(**tokenizer("hello", return_tensors="pt")).last_hidden_state.mean(1).detach().numpy()[0]
+
+# Any model — just match the dim
+client = SpaceClient("./data", dim=len(vec))
+```
+
+See [`examples/custom_embeddings.py`](examples/custom_embeddings.py) for a full working example.
 
 ---
 
-## Requirements
+## Exceptions
 
-- Windows 10 / 11
-- Python 3.11+ (auto-installed if missing)
-- ~1 GB disk space (sentence-transformers model)
-- Internet connection for first install
+All exceptions inherit from `SpaceDBError`:
+
+| Exception | When |
+|---|---|
+| `BlockNotFoundError` | Block ID doesn't exist |
+| `VectorDimensionError` | Vector dim ≠ space dim |
+| `StoreCorruptedError` | Persisted data is corrupt |
+| `ClusterNotFoundError` | Cluster ID doesn't exist |
+| `EmbedderNotAvailableError` | `sentence-transformers` not installed and text was passed |
+
+```python
+from spacedb import SpaceDBError, VectorDimensionError
+```
+
+---
+
+## Shell (CLI)
+
+```bash
+spacesh ./my_data
+```
+
+```
+space> use demo
+space[demo]> ingest "apple tastes sweet"
+space[demo]> query "fruit"
+space[demo]> drift on
+space[demo]> status
+```
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/nihar840/theSpaceDB.git
+cd theSpaceDB
+pip install -e ".[dev]"
+pytest
+```
 
 ---
 
@@ -217,28 +250,44 @@ Double-click `installer\uninstall.bat` to remove theSpaceDB completely.
 
 ```
 theSpaceDB/
-├── installer/
-│   ├── install.bat       ← double-click to install
-│   ├── install.ps1       ← installer logic
-│   ├── verify.bat        ← check installation
-│   └── uninstall.bat     ← remove everything
 ├── spacedb/
-│   ├── client.py         ← SpaceClient (entry point)
-│   ├── space.py          ← Space (per-mind operations)
-│   ├── query.py          ← QueryBuilder (chainable)
-│   ├── drift.py          ← DriftController
-│   ├── shell.py          ← spacesh CLI shell
+│   ├── __init__.py         ← public exports
+│   ├── client.py           ← SpaceClient (entry point)
+│   ├── space.py            ← Space (per-mind operations)
+│   ├── query.py            ← QueryBuilder (chainable)
+│   ├── drift.py            ← DriftController
+│   ├── shell.py            ← spacesh CLI shell
 │   └── _core/
-│       ├── engine.py         ← SpaceEngine (unified internal API)
-│       ├── block_store.py    ← append-only block log
-│       ├── vector_store.py   ← raw embeddings
-│       ├── distance_engine.py← W matrix (the soul)
-│       ├── graph_store.py    ← adjacency + random walk
-│       └── cluster_registry.py← spirit size + personalities
+│       ├── engine.py           ← SpaceEngine (orchestrator)
+│       ├── models.py           ← MemoryBlock, ClusterData
+│       ├── block_store.py      ← append-only block log
+│       ├── vector_store.py     ← raw embeddings
+│       ├── distance_engine.py  ← W matrix (the soul)
+│       ├── graph_store.py      ← adjacency + random walk
+│       ├── cluster_registry.py ← spirit size + personalities
+│       ├── _exceptions.py      ← exception hierarchy
+│       └── _version.py         ← data format version
+├── tests/                  ← 53 pytest tests
 ├── examples/
-│   └── hello_space.py
-└── pyproject.toml
+│   ├── hello_space.py
+│   └── custom_embeddings.py
+├── pyproject.toml
+└── LICENSE
 ```
+
+---
+
+## Requirements
+
+- Python 3.10+
+- numpy ≥ 1.24
+- Any OS (Windows, macOS, Linux)
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 ---
 
