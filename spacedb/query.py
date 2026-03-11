@@ -111,7 +111,7 @@ class QueryBuilder:
             limit=self._limit,
         )
 
-        return [
+        results = [
             {
                 "id":            b.id,
                 "token":         b.token,
@@ -122,6 +122,15 @@ class QueryBuilder:
             }
             for b, score in raw
         ]
+
+        # Cross-personality dynamics: if results span multiple
+        # personalities, gently reinforce inter-personality links.
+        if len(results) >= 2:
+            self._space._engine.cross_personality_link(
+                [r["id"] for r in results]
+            )
+
+        return results
 
     def __repr__(self):
         source = self._text if self._text is not None else "<vector>"

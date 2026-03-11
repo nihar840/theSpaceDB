@@ -59,3 +59,16 @@ def test_status_keys(space):
     s2 = space.drift.status()
     assert s2["active"] is True
     space.drift.stop()
+
+
+def test_drift_loop_performs_updates(space):
+    blocks = [space.ingest(_rand_vec()) for _ in range(3)]
+    space.create_cluster([b.id for b in blocks], name="seed")
+
+    before = space.status()["w_updates"]
+    space.drift.start(idle_seconds=0.0)
+    time.sleep(2.5)
+    space.drift.stop()
+
+    after = space.status()["w_updates"]
+    assert after > before

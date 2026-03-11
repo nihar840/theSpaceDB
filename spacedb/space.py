@@ -207,6 +207,11 @@ class Space:
         s["max_size_mb"] = self._max_size_mb
         return s
 
+    # ── evolution ──────────────────────────────────────────────
+    def evolution(self) -> list[dict]:
+        """Read the evolution trajectory log for this space."""
+        return self._engine.evolution_trajectory()
+
     # ── internal ─────────────────────────────────────────────
     def _check_quota(self):
         """Raise StorageQuotaError if space has reached its size limit."""

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "thespacedb"
-version         = "0.2.0"
+version         = "0.3.0"
 description     = "A self-evolving cognitive database. Blocks in free space. Distance evolves. Clusters emerge."
 readme          = "README.md"
 license         = {text = "MIT"}
@@ -31,14 +31,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-embeddings = ["sentence-transformers>=2.7"]
-fast       = ["hnswlib>=0.8"]
+embeddings  = ["sentence-transformers>=2.7"]
+clustering  = ["scikit-learn>=1.3"]
+fast        = ["hnswlib>=0.8"]
 dev        = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
     "pytest-cov>=4.0",
 ]
-all        = ["thespacedb[embeddings,fast]"]
+all        = ["thespacedb[embeddings,clustering,fast]"]
 
 [project.urls]
 Homepage   = "https://github.com/nihar840/theSpaceDB"

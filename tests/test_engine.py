@@ -100,6 +100,10 @@ def test_register_cluster(engine):
         b = engine._blocks.read(bid)
         assert b.cluster_id == cid
 
+    cluster = engine._clusters.get(cid)
+    assert cluster is not None
+    assert cluster.spirit_size >= 0.0
+
 
 def test_status_dict_keys(engine):
     engine.ingest("seed", _rand_vec())
@@ -111,6 +115,17 @@ def test_status_dict_keys(engine):
     }
     assert expected_keys.issubset(s.keys())
     assert s["blocks"] >= 1
+
+
+def test_reinforce_refreshes_cluster_spirit(engine):
+    blocks = [engine.ingest(f"item-{i}", _rand_vec()) for i in range(3)]
+    cid = engine.register_cluster([b.id for b in blocks], name="spirit-cluster")
+
+    before = engine._clusters.get(cid).spirit_size
+    engine.reinforce(blocks[0].id, blocks[1].id, strength=0.05)
+    after = engine._clusters.get(cid).spirit_size
+
+    assert after != before
 
 
 def test_data_format_version_file_created():

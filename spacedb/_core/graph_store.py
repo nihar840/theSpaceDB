@@ -48,6 +48,25 @@ class GraphStore:
                 self._save()
                 self._dirty = False
 
+    def random_edges(self, n: int) -> list[tuple[str, str, float]]:
+        """Return up to *n* random edges as (a, b, weight) tuples."""
+        with self._lock:
+            edges = []
+            for a, nb in self._adj.items():
+                for b, w in nb.items():
+                    if a < b:           # each undirected edge once
+                        edges.append((a, b, w))
+            if not edges:
+                return []
+            return random.sample(edges, min(n, len(edges)))
+
+    def remove_edge(self, a: str, b: str):
+        """Remove an edge entirely from the graph."""
+        with self._lock:
+            self._adj[a].pop(b, None)
+            self._adj[b].pop(a, None)
+            self._dirty = True
+
     def node_count(self) -> int: return len(self._adj)
     def edge_count(self) -> int: return sum(len(v) for v in self._adj.values()) // 2
 
