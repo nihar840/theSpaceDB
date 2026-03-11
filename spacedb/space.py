@@ -94,6 +94,7 @@ class Space:
         self,
         content: Union[str, np.ndarray],
         sensory_type: str = "text",
+        **memory_kwargs,
     ) -> "MemoryBlock":
         """
         Store a piece of experience.
@@ -117,10 +118,24 @@ class Space:
         if isinstance(content, np.ndarray):
             vec = self._validate_vector(content)
             token = f"<raw:{sensory_type}>"
-            return self._engine.ingest(token, vec, sensory_type)
+            return self._engine.ingest(
+                token,
+                vec,
+                sensory_type,
+                raw_input=memory_kwargs.pop("raw_input", None),
+                normalized_content=memory_kwargs.pop("normalized_content", token),
+                **memory_kwargs,
+            )
         elif isinstance(content, str):
             vec = self._embed(content)
-            return self._engine.ingest(content, vec, sensory_type)
+            return self._engine.ingest(
+                content,
+                vec,
+                sensory_type,
+                raw_input=memory_kwargs.pop("raw_input", content),
+                normalized_content=memory_kwargs.pop("normalized_content", content),
+                **memory_kwargs,
+            )
         else:
             raise TypeError(
                 f"content must be str or np.ndarray, got {type(content).__name__}"

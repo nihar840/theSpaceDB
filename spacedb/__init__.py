@@ -7,7 +7,13 @@ from .space  import Space
 from .query  import QueryBuilder
 from .drift  import DriftController
 
-from ._core.models import MemoryBlock, ClusterData
+from ._core.models import (
+    EmotionTag,
+    TraitSignal,
+    PersonalityState,
+    MemoryBlock,
+    ClusterData,
+)
 from ._core._exceptions import (
     SpaceDBError,
     BlockNotFoundError,
@@ -27,6 +33,9 @@ __all__ = [
     "QueryBuilder",
     "DriftController",
     # Data models
+    "EmotionTag",
+    "TraitSignal",
+    "PersonalityState",
     "MemoryBlock",
     "ClusterData",
     # Exceptions

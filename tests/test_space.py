@@ -35,6 +35,30 @@ def test_ingest_raw_vector(space):
     assert block.sensory_type == "text"
 
 
+def test_ingest_raw_vector_with_memory_metadata(space):
+    vec = _rand_vec()
+    block = space.ingest(
+        vec,
+        sensory_type="vision",
+        raw_input={"frame": 12},
+        normalized_content="door partially open",
+        importance=0.75,
+        novelty=0.4,
+        linked_previous=["mem-1"],
+        active_traits={"alertness": 0.3},
+        metadata={"camera": "front"},
+    )
+
+    assert block.token == "<raw:vision>"
+    assert block.raw_input == {"frame": 12}
+    assert block.normalized_content == "door partially open"
+    assert block.importance == 0.75
+    assert block.novelty == 0.4
+    assert block.linked_previous == ["mem-1"]
+    assert block.active_traits == {"alertness": 0.3}
+    assert block.metadata == {"camera": "front"}
+
+
 def test_ingest_string_without_embedder_raises(space):
     with pytest.raises(EmbedderNotAvailableError):
         space.ingest("some text that needs embedding")

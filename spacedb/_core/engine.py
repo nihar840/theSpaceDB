@@ -60,14 +60,15 @@ class SpaceEngine:
 
     # ── ingest ───────────────────────────────────────────────
     def ingest(self, token: str, vec: np.ndarray,
-               sensory_type: str = 'text') -> MemoryBlock:
+               sensory_type: str = 'text',
+               **block_kwargs) -> MemoryBlock:
         if not token:
             raise ValueError("token must be non-empty")
         if not isinstance(vec, np.ndarray) or vec.shape != (self.dim,):
             raise VectorDimensionError(
                 f"Expected ndarray shape ({self.dim},), got {type(vec).__name__} "
                 f"{getattr(vec, 'shape', '?')}")
-        block = MemoryBlock.create(token, sensory_type)
+        block = MemoryBlock.create(token, sensory_type, **block_kwargs)
         self._blocks.append(block)
         self._vectors.put(block.id, vec)
         self._connect(block.id, vec)
