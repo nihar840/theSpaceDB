@@ -16,6 +16,7 @@ class ClusterRegistry:
         self._path  = os.path.join(path, 'clusters.json')
         self._data: dict[str, ClusterData] = {}
         self._exp   = 0
+        self._on_personality_change = None   # callback(event_type, cid)
         self._load()
 
     @property
@@ -56,9 +57,13 @@ class ClusterRegistry:
             if not c.is_personality and spirit > t:
                 c.is_personality = True
                 logger.info("Personality emerged: '%s'  spirit=%.3f", c.name or cid, spirit)
+                if self._on_personality_change:
+                    self._on_personality_change("promoted", cid)
             elif c.is_personality and spirit < t * 0.5:
                 c.is_personality = False
                 logger.info("Personality dissolved: '%s'", c.name or cid)
+                if self._on_personality_change:
+                    self._on_personality_change("demoted", cid)
             self._save()
 
     def record_experience(self):

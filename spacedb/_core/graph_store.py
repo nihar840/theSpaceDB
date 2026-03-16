@@ -67,6 +67,30 @@ class GraphStore:
             self._adj[b].pop(a, None)
             self._dirty = True
 
+    def remove_node(self, node_id: str) -> int:
+        """Remove all edges involving this node. Returns edge count removed."""
+        with self._lock:
+            if node_id not in self._adj:
+                return 0
+            neighbors = dict(self._adj[node_id])
+            for neighbor_id in neighbors:
+                self._adj[neighbor_id].pop(node_id, None)
+                # Clean up empty adjacency entries
+                if not self._adj[neighbor_id]:
+                    del self._adj[neighbor_id]
+            removed = len(neighbors)
+            del self._adj[node_id]
+            self._dirty = True
+            return removed
+
+    def edge_count_for(self, node_id: str) -> int:
+        """How many edges does this node have?"""
+        return len(self._adj.get(node_id, {}))
+
+    def total_edge_count(self) -> int:
+        """Total edges in graph (each undirected edge counted once)."""
+        return sum(len(v) for v in self._adj.values()) // 2
+
     def node_count(self) -> int: return len(self._adj)
     def edge_count(self) -> int: return sum(len(v) for v in self._adj.values()) // 2
 

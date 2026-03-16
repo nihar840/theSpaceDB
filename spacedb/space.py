@@ -28,6 +28,7 @@ from typing import Optional, Union, TYPE_CHECKING
 import numpy as np
 
 from ._core.engine       import SpaceEngine
+from ._core.cosmic       import CosmicLimits
 from ._core._exceptions  import (
     EmbedderNotAvailableError, VectorDimensionError, StorageQuotaError,
 )
@@ -69,6 +70,94 @@ class ClusterView:
         }
 
 
+class DriverView:
+    """Public API for the Driver (the executive self)."""
+
+    def __init__(self, engine: SpaceEngine):
+        self._d = engine.driver
+
+    def select_personality(self, vec, scores: dict) -> str | None:
+        """Strategic personality selection. Returns personality id or None."""
+        return self._d.select_personality(vec, scores)
+
+    def feedback(self, outcome: str, score: float = 0.0):
+        """Learn from outcome: 'positive', 'negative', or 'neutral'."""
+        self._d.feedback(outcome, score)
+
+    def direct_drift(self, cluster_id: str, strength: float = 1.0):
+        """Steer drift to focus on a specific cluster."""
+        self._d.direct_drift(cluster_id, strength)
+
+    @property
+    def active_personality(self) -> str | None:
+        """Who's currently speaking."""
+        return self._d.active_personality
+
+    def history(self, limit: int = 50) -> list[dict]:
+        """Recent activation records."""
+        return self._d.history(limit)
+
+    def affinity(self) -> dict[str, float]:
+        """Learned preference weights per personality."""
+        return self._d.affinity()
+
+    def status(self) -> dict:
+        """Overview of Driver state."""
+        return self._d.status()
+
+
+class PantheonView:
+    """Read-only view of the God Point routing layer.
+
+    God Points are cluster centroids that enable fast O(g + k) queries
+    instead of O(n) full scans.  They emerge automatically when
+    auto-clustering runs (every 50 blocks).
+
+    Example::
+
+        space.pantheon.count          # number of God Points
+        space.pantheon.all()          # list of all God Points
+        space.pantheon.route(vec, 3)  # find 3 nearest Gods
+    """
+
+    def __init__(self, engine: SpaceEngine):
+        self._e = engine
+
+    def all(self) -> list[dict]:
+        """Return all God Points as dicts."""
+        return [self._fmt(g) for g in self._e.pantheon.all()]
+
+    def get(self, god_id: str) -> "Optional[dict]":
+        """Get a single God Point by ID."""
+        g = self._e.pantheon.get(god_id)
+        return self._fmt(g) if g else None
+
+    def route(self, vec: np.ndarray, top_k: int = 3) -> list[dict]:
+        """Route a vector to the nearest God Points.
+
+        Returns list of dicts with ``distance`` included, sorted ascending.
+        """
+        results = self._e.pantheon.route(vec, top_k=top_k)
+        return [
+            {**self._fmt(god), "distance": round(dist, 6)}
+            for god, dist in results
+        ]
+
+    @property
+    def count(self) -> int:
+        """Number of God Points currently alive."""
+        return self._e.pantheon.count
+
+    def _fmt(self, g) -> dict:
+        return {
+            "id": g.id,
+            "cluster_id": g.cluster_id,
+            "block_count": g.block_count,
+            "spirit": round(g.spirit, 4),
+            "tier": g.tier,
+        }
+
+
 class Space:
     """
     A named cognitive space (analogous to a MongoDB database).
@@ -76,18 +165,22 @@ class Space:
     """
 
     def __init__(self, name: str, base_path: str, dim: int = 384,
-                 max_size_mb: Optional[float] = None):
+                 max_size_mb: Optional[float] = None,
+                 cosmic_limits: Optional[CosmicLimits] = None):
         self.name  = name
         self._path = os.path.join(base_path, name)
         os.makedirs(self._path, exist_ok=True)
 
-        self._engine       = SpaceEngine(self._path, dim)
+        self._engine       = SpaceEngine(self._path, dim,
+                                         cosmic_limits=cosmic_limits)
         self._embedder     = None          # lazy-loaded
         self._dim          = dim
         self._max_size_mb  = max_size_mb   # None = unlimited
 
         self.drift    = DriftController(self._engine)
         self.clusters = ClusterView(self._engine)
+        self.driver   = DriverView(self._engine)
+        self.pantheon = PantheonView(self._engine)
 
     # ── ingest ───────────────────────────────────────────────
     def ingest(
@@ -132,6 +225,46 @@ class Space:
                 content,
                 vec,
                 sensory_type,
+                raw_input=memory_kwargs.pop("raw_input", content),
+                normalized_content=memory_kwargs.pop("normalized_content", content),
+                **memory_kwargs,
+            )
+        else:
+            raise TypeError(
+                f"content must be str or np.ndarray, got {type(content).__name__}"
+            )
+
+    # ── bulk ingest mode ─────────────────────────────────────
+    def begin_bulk(self):
+        """Enter bulk mode for fast batch ingestion.
+        Defers clustering, reduces disk I/O, skips passive decay."""
+        self._engine.begin_bulk()
+
+    def end_bulk(self):
+        """Exit bulk mode. Flushes all pending data and runs clustering."""
+        self._engine.end_bulk()
+
+    def ingest_fast(
+        self,
+        content: Union[str, np.ndarray],
+        sensory_type: str = "text",
+        **memory_kwargs,
+    ) -> "MemoryBlock":
+        """Fast ingest for bulk operations. Use between begin_bulk/end_bulk."""
+        self._check_quota()
+        if isinstance(content, np.ndarray):
+            vec = self._validate_vector(content)
+            token = f"<raw:{sensory_type}>"
+            return self._engine.ingest_fast(
+                token, vec, sensory_type,
+                raw_input=memory_kwargs.pop("raw_input", None),
+                normalized_content=memory_kwargs.pop("normalized_content", token),
+                **memory_kwargs,
+            )
+        elif isinstance(content, str):
+            vec = self._embed(content)
+            return self._engine.ingest_fast(
+                content, vec, sensory_type,
                 raw_input=memory_kwargs.pop("raw_input", content),
                 normalized_content=memory_kwargs.pop("normalized_content", content),
                 **memory_kwargs,
@@ -226,6 +359,57 @@ class Space:
     def evolution(self) -> list[dict]:
         """Read the evolution trajectory log for this space."""
         return self._engine.evolution_trajectory()
+
+    # ── cosmic capacity ───────────────────────────────────────
+    def cosmic_status(self) -> dict:
+        """Current cosmic capacity usage.
+
+        Returns dict with blocks/edges/gods/clusters/personalities usage
+        and reaper statistics.
+        """
+        e = self._engine
+        limits = e._cosmic_limits
+        alive = e._blocks.alive_count()
+        max_b = limits.max_blocks
+        return {
+            "blocks": {
+                "alive": alive,
+                "total": e._blocks.count(),
+                "limit": max_b,
+                "pressure": round(alive / max_b, 6) if max_b > 0 else 0.0,
+            },
+            "edges": {
+                "total": e._graph.total_edge_count(),
+                "limit": limits.max_total_edges,
+            },
+            "gods": {
+                "count": e._pantheon.count,
+                "limit": limits.max_gods,
+            },
+            "clusters": {
+                "count": e._clusters.count(),
+                "limit": limits.max_clusters,
+            },
+            "personalities": {
+                "count": len(e._clusters.personalities()),
+                "limit": limits.max_personalities,
+            },
+            "reaper": e._reaper.status(),
+        }
+
+    def compact(self):
+        """Reclaim disk space by rewriting stores without dead entries.
+
+        Call this after a batch of evictions to shrink on-disk files.
+        This is an offline operation — do not ingest while compacting.
+        """
+        self._engine._blocks.compact()
+        self._engine._vectors.compact()
+        self._engine._graph.flush()
+
+    def dissolve_block(self, block_id: str):
+        """Manually dissolve a specific block (cascade delete)."""
+        self._engine.dissolve_block(block_id)
 
     # ── internal ─────────────────────────────────────────────
     def _check_quota(self):

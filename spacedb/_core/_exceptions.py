@@ -27,3 +27,7 @@ class EmbedderNotAvailableError(SpaceDBError):
 
 class StorageQuotaError(SpaceDBError):
     """Raised when a Space has reached its max_size_mb limit and cannot ingest new blocks."""
+
+
+class CapacityExhaustedError(SpaceDBError):
+    """Raised when cosmic capacity limit is reached and eviction cannot free space."""

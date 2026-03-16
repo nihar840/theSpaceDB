@@ -45,6 +45,7 @@ class QueryBuilder:
         self._vector         = _vector
         self._time_budget_ms = 100
         self._personality    = None
+        self._auto_pid       = False
         self._limit          = 20
 
     def within(self, ms: int) -> "QueryBuilder":
@@ -67,6 +68,13 @@ class QueryBuilder:
     def as_personality(self, name_or_id: str) -> "QueryBuilder":
         """Bias results toward a specific personality cluster."""
         self._personality = name_or_id
+        self._auto_pid = False
+        return self
+
+    def auto_personality(self) -> "QueryBuilder":
+        """Let the Driver (executive self) choose the personality."""
+        self._auto_pid = True
+        self._personality = None
         return self
 
     def limit(self, n: int) -> "QueryBuilder":
@@ -93,15 +101,57 @@ class QueryBuilder:
             Each dict contains: ``id``, ``token``, ``score``, ``cluster``,
             ``sensory_type``, ``reinforcement``.
         """
+        results, _ = self._execute()
+        return results
+
+    def fetch_with_confidence(self):
+        """
+        Execute the query and return confidence metrics alongside results.
+
+        Returns
+        -------
+        tuple[list[dict], QueryConfidence]
+            Results list (same as ``fetch()``) plus a ``QueryConfidence``
+            object with ``score``, ``hit_count``, ``coverage``, ``sparse``, etc.
+
+        Example::
+
+            results, confidence = (
+                space.query(vec).within(ms=300).limit(5)
+                    .auto_personality().fetch_with_confidence()
+            )
+            if confidence.sparse:
+                print("Not much memory about this topic...")
+        """
+        return self._execute()
+
+    def _execute(self):
+        """Shared execution logic for fetch() and fetch_with_confidence()."""
         # Resolve query vector
         if self._vector is not None:
             vec = self._vector
         else:
             vec = self._space._embed(self._text)
 
-        # Resolve personality name → cluster_id
+        # Resolve personality: manual, auto (Driver), or none
         pid = None
-        if self._personality:
+        if self._auto_pid:
+            # Let the Driver decide
+            personalities = self._space._engine.clusters.personalities()
+            if personalities:
+                candidate_scores = {}
+                for p in personalities:
+                    raw_p = self._space._engine.query(
+                        vec, time_budget_ms=50, personality_id=p.id, limit=3,
+                    )
+                    if raw_p:
+                        avg = sum(s for _, s in raw_p) / len(raw_p)
+                        candidate_scores[p.id] = avg
+                if candidate_scores:
+                    pid = self._space._engine.driver.select_personality(
+                        vec, candidate_scores,
+                    )
+        elif self._personality:
             pid = self._space._resolve_personality(self._personality)
 
         raw = self._space._engine.query(
@@ -130,7 +180,10 @@ class QueryBuilder:
                 [r["id"] for r in results]
             )
 
-        return results
+        # Compute confidence metrics
+        confidence = self._space._engine._compute_confidence(raw, self._limit)
+
+        return results, confidence
 
     def __repr__(self):
         source = self._text if self._text is not None else "<vector>"

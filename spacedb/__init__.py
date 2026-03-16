@@ -11,8 +11,18 @@ from ._core.models import (
     EmotionTag,
     TraitSignal,
     PersonalityState,
+    ActivationRecord,
+    DriverState,
     MemoryBlock,
     ClusterData,
+    GodPoint,
+    QueryConfidence,
+)
+from ._core.cosmic import (
+    CosmicLimits,
+    THIRTY_THREE_CRORE,
+    SMALL_SPACE,
+    UNLIMITED,
 )
 from ._core._exceptions import (
     SpaceDBError,
@@ -22,6 +32,7 @@ from ._core._exceptions import (
     ClusterNotFoundError,
     EmbedderNotAvailableError,
     StorageQuotaError,
+    CapacityExhaustedError,
 )
 
 __version__ = "0.3.0"
@@ -36,8 +47,17 @@ __all__ = [
     "EmotionTag",
     "TraitSignal",
     "PersonalityState",
+    "ActivationRecord",
+    "DriverState",
     "MemoryBlock",
     "ClusterData",
+    "GodPoint",
+    "QueryConfidence",
+    # Cosmic architecture
+    "CosmicLimits",
+    "THIRTY_THREE_CRORE",
+    "SMALL_SPACE",
+    "UNLIMITED",
     # Exceptions
     "SpaceDBError",
     "BlockNotFoundError",
@@ -46,4 +66,5 @@ __all__ = [
     "ClusterNotFoundError",
     "EmbedderNotAvailableError",
     "StorageQuotaError",
+    "CapacityExhaustedError",
 ]

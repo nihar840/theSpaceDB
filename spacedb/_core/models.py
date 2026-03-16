@@ -4,18 +4,28 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+import numpy as np
+
 __all__ = [
     "EmotionTag",
     "TraitSignal",
     "PersonalityState",
+    "ActivationRecord",
+    "DriverState",
     "MemoryBlock",
     "ClusterData",
+    "GodPoint",
+    "QueryConfidence",
 ]
 
 log = logging.getLogger("spacedb.models")
 
 # Well-known sensory types; custom strings are allowed.
-KNOWN_SENSORY_TYPES = frozenset({"text", "audio", "vision", "internal"})
+KNOWN_SENSORY_TYPES = frozenset({
+    "text", "audio", "vision", "internal",
+    "response", "expression", "reflection", "dream", "insight",
+    "lesson", "value", "perspective", "fact",  # Gurukul + Vedic training types
+})
 
 
 @dataclass
@@ -46,6 +56,33 @@ class PersonalityState:
     min_blocks_required: int = 0
     last_activated_utc: float = field(default_factory=time.time)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ActivationRecord:
+    """One personality activation event recorded by the Driver."""
+    timestamp: float = field(default_factory=time.time)
+    personality_id: Optional[str] = None
+    personality_name: Optional[str] = None
+    trigger_type: str = "query"           # query | ingest | drift | manual
+    scores: dict[str, float] = field(default_factory=dict)   # pid -> composite
+    context_tags: list[str] = field(default_factory=list)
+    outcome: Optional[str] = None         # positive | negative | neutral
+    feedback_score: float = 0.0
+    duration_s: float = 0.0
+
+
+@dataclass
+class DriverState:
+    """Persisted state of the Driver (the executive self)."""
+    active_personality_id: Optional[str] = None
+    active_since: float = field(default_factory=time.time)
+    total_activations: int = 0
+    total_switches: int = 0
+    personality_affinity: dict[str, float] = field(default_factory=dict)     # pid -> [-1, 1]
+    coactivation_matrix: dict[str, dict[str, float]] = field(default_factory=dict)  # pid -> {pid -> float}
+    drift_focus: Optional[str] = None       # cluster_id to steer drift toward
+    drift_focus_strength: float = 0.0
 
 
 @dataclass
@@ -148,3 +185,46 @@ class ClusterData:
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     name: Optional[str] = None
+
+
+@dataclass
+class GodPoint:
+    """A routing anchor in the data space — a Deva.
+
+    God Points are cluster centroids that form a coarse navigation
+    layer above individual memory blocks.  Instead of scanning every
+    block on every query (O(n)), we first find the nearest God Point(s)
+    using fast cosine similarity (O(g)), then search only within their
+    cluster cells (O(k)).
+
+    Cosmological mapping:
+        Brahma creates God Points  (spawn)
+        Vishnu routes through them (route)
+        Shiva transforms them     (dissolve / merge)
+    """
+    id: str                                          # "god_" + uuid[:8]
+    centroid: np.ndarray                             # L2-normalized mean vector
+    cluster_id: str                                  # linked cluster in ClusterRegistry
+    block_count: int                                 # cached member count
+    spirit: float                                    # mirrored from ClusterData.spirit_size
+    tier: int = 0                                    # 0 = base god, 1+ = higher (future)
+    parent_id: Optional[str] = None                  # parent God (future hierarchy)
+    children_ids: list[str] = field(default_factory=list)  # sub-Gods (future)
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+
+
+@dataclass
+class QueryConfidence:
+    """Confidence metrics for a query result set.
+
+    Lets the mind know how sure it is about a response.
+    High confidence = many strong matches across clusters.
+    Low confidence = sparse, uncertain, "I don't know" territory.
+    """
+    score: float           # 0.0-1.0 overall confidence
+    hit_count: int         # how many results found
+    max_similarity: float  # highest similarity score among results
+    mean_similarity: float # average similarity across results
+    coverage: float        # fraction of clusters represented (0.0-1.0)
+    sparse: bool           # True if hit_count < limit/3

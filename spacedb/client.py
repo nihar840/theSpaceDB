@@ -23,6 +23,7 @@ import os
 from typing import Optional
 
 from .space import Space
+from ._core.cosmic import CosmicLimits
 
 log = logging.getLogger("spacedb.client")
 
@@ -44,17 +45,20 @@ class SpaceClient:
     """
 
     def __init__(self, path: str, dim: int = 384, silent: bool = False,
-                 max_size_mb: Optional[float] = None):
+                 max_size_mb: Optional[float] = None,
+                 cosmic_limits: Optional[CosmicLimits] = None):
         self._root = os.path.abspath(path)
         self._dim  = dim
         self._max_size_mb = max_size_mb   # default quota for new spaces
+        self._cosmic_limits = cosmic_limits  # cosmic capacity limits
         self._cache: dict[str, Space] = {}
         os.makedirs(self._root, exist_ok=True)
         if not silent:
             log.info("theSpaceDB connected -> %s", self._root)
 
     # ── space access ─────────────────────────────────────────
-    def use(self, name: str, max_size_mb: Optional[float] = None) -> Space:
+    def use(self, name: str, max_size_mb: Optional[float] = None,
+            cosmic_limits: Optional[CosmicLimits] = None) -> Space:
         """
         Open (or create) a Space by name.
 
@@ -65,14 +69,19 @@ class SpaceClient:
         max_size_mb : float, optional
             Override the client-level default size limit for this space.
             ``None`` inherits the client default. ``0`` means unlimited.
+        cosmic_limits : CosmicLimits, optional
+            Override the client-level cosmic capacity limits for this space.
+            ``None`` inherits the client default.
         """
         if name not in self._cache:
             quota = max_size_mb if max_size_mb is not None else self._max_size_mb
             # 0 means explicitly unlimited
             if quota == 0:
                 quota = None
+            limits = cosmic_limits or self._cosmic_limits
             self._cache[name] = Space(name, self._root, self._dim,
-                                      max_size_mb=quota)
+                                      max_size_mb=quota,
+                                      cosmic_limits=limits)
             log.debug("Opened space %r (quota: %s MB)", name,
                        quota or "unlimited")
         return self._cache[name]
