@@ -47,7 +47,8 @@ Repository = "https://github.com/nihar840/theSpaceDB"
 Issues     = "https://github.com/nihar840/theSpaceDB/issues"
 
 [project.scripts]
-spacesh = "spacedb.shell:main"
+spacesh        = "spacedb.shell:main"
+spacesh-ingest = "spacedb.tools.ingest:main"
 
 [tool.setuptools.packages.find]
 where   = ["."]
